@@ -98,8 +98,28 @@ class KernelBuilder:
         slots = []
 
         for hi, (op1, val1, op2, op3, val3) in enumerate(HASH_STAGES):
-            slots.append(("alu", (op1, tmp1, val_hash_addr, self.scratch_const(val1))))
-            slots.append(("alu", (op3, tmp2, val_hash_addr, self.scratch_const(val3))))
+            slots.append(
+                (
+                    "alu",
+                    (
+                        op1,
+                        tmp1,
+                        val_hash_addr,
+                        self.scratch_const(val1, f"const_{val1}"),
+                    ),
+                )
+            )
+            slots.append(
+                (
+                    "alu",
+                    (
+                        op3,
+                        tmp2,
+                        val_hash_addr,
+                        self.scratch_const(val3, f"const_{val3}"),
+                    ),
+                )
+            )
             slots.append(("alu", (op2, val_hash_addr, tmp1, tmp2)))
             slots.append(
                 ("debug", ("compare", val_hash_addr, [(round, i, "hash_stage", hi)]))
@@ -116,13 +136,23 @@ class KernelBuilder:
             slots.append(
                 (
                     "valu",
-                    (op1, tmp1, val_hash_addr, self.scratch_const_vectorized(val1)),
+                    (
+                        op1,
+                        tmp1,
+                        val_hash_addr,
+                        self.scratch_const_vectorized(val1, f"const_hash_{val1}"),
+                    ),
                 )
             )
             slots.append(
                 (
                     "valu",
-                    (op3, tmp2, val_hash_addr, self.scratch_const_vectorized(val3)),
+                    (
+                        op3,
+                        tmp2,
+                        val_hash_addr,
+                        self.scratch_const_vectorized(val3, f"const_hash_{val3}"),
+                    ),
                 )
             )
             slots.append(("valu", (op2, val_hash_addr, tmp1, tmp2)))
@@ -160,9 +190,15 @@ class KernelBuilder:
             self.add("load", ("const", tmp1, i))
             self.add("load", ("load", self.scratch[v], tmp1))
 
-        zero_const_vectorized = self.scratch_const_vectorized(0)
-        one_const_vectorized = self.scratch_const_vectorized(1)
-        two_const_vectorized = self.scratch_const_vectorized(2)
+        zero_const_vectorized = self.scratch_const_vectorized(
+            0, name="zero_const_vectorized"
+        )
+        one_const_vectorized = self.scratch_const_vectorized(
+            1, name="one_const_vectorized"
+        )
+        two_const_vectorized = self.scratch_const_vectorized(
+            2, name="two_const_vectorized"
+        )
 
         forest_values_p_vectorized = self.alloc_scratch(
             "forest_values_p_vectorized", length=VLEN
@@ -199,7 +235,7 @@ class KernelBuilder:
             for i in range(num_chunks):
                 i_offset = i * VLEN
                 debug_range = range(i_offset, i_offset + VLEN)
-                i_offset = self.scratch_const(i_offset)
+                i_offset = self.scratch_const(i_offset, f"const_{i}")
 
                 # idx = mem[inp_indices_p + i]
                 body.append(
