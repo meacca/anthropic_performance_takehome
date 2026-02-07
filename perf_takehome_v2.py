@@ -178,37 +178,8 @@ class KernelBuilder:
         # Allocate temporary node value
         tmp_node_val = self.alloc_scratch("tmp_node_val", length=VLEN)
         tmp_addr = self.alloc_scratch("tmp_addr", length=VLEN)
-        val_broadcast = self.alloc_scratch("val_broadcast", length=VLEN)
-
-        # Cache tree level values in scratch to replace memory loads with valu ops.
-        # For each cached level, pre-load node values into level_cache, then gather
-        # using vectorized compare + multiply + accumulate per node j.
-        MAX_CACHE_LEVEL = 5
-        level_cache_size = max(VLEN, 2**MAX_CACHE_LEVEL)
-        level_cache = self.alloc_scratch("level_cache", length=level_cache_size)
-
-        # Pre-create vectorized j constants for the comparison in the gather loop
-        j_const_vecs = []
-        for j in range(level_cache_size):
-            j_const_vecs.append(self.scratch_const_vectorized(j, name=f"j_vec_{j}"))
 
         for round in range(rounds):
-            level = round % (forest_height + 1)
-            use_cache = level <= MAX_CACHE_LEVEL
-
-            if use_cache:
-                start_index = 2**level - 1
-                num_nodes_level = 2**level
-
-                # Pre-load this level's node values from memory into level_cache
-                for k in range(max(1, num_nodes_level // VLEN)):
-                    total_offset = start_index + k * VLEN
-                    total_offset_addr = self.scratch_const(total_offset)
-                    body.append(("alu", ("+", tmp_addr_scalar, self.scratch["forest_values_p"], total_offset_addr)))
-                    body.append(("load", ("vload", level_cache + k * VLEN, tmp_addr_scalar)))
-
-                start_const_vec = self.scratch_const_vectorized(start_index, name=f"level_start_{start_index}")
-
             for i in range(num_chunks):
                 i_offset = i * VLEN
                 debug_range = range(i_offset, i_offset + VLEN)
@@ -223,32 +194,9 @@ class KernelBuilder:
                 body.append(self.form_debug_compare_vector(tmp_val, round, debug_range, "val"))
 
                 # node_val = mem[forest_values_p + idx]
-                if use_cache:
-                    if level == 0:
-                        # All items at same node — just broadcast the single cached value
-                        body.append(("valu", ("vbroadcast", tmp_node_val, level_cache)))
-                    else:
-                        # Compute relative index within level: rel_idx = idx - (2^level - 1)
-                        body.append(("valu", ("-", tmp_addr, tmp_idx, start_const_vec)))
-                        # Init tmp_node_val to 0 via XOR with self
-                        body.append(("valu", ("^", tmp_node_val, tmp_node_val, tmp_node_val)))
-                        # Gather from scratch: for each node j in the level,
-                        # check which lanes match and accumulate the cached value
-                        for j in range(num_nodes_level):
-                            # mask = (rel_idx == j) per lane
-                            body.append(("valu", ("==", tmp1, tmp_addr, j_const_vecs[j])))
-                            # broadcast scratch[level_cache + j] to all lanes
-                            body.append(("valu", ("vbroadcast", val_broadcast, level_cache + j)))
-                            # zero out non-matching lanes
-                            body.append(("valu", ("*", val_broadcast, val_broadcast, tmp1)))
-                            # accumulate into result
-                            body.append(("valu", ("+", tmp_node_val, tmp_node_val, val_broadcast)))
-                else:
-                    # Fall back to memory loads for large levels
-                    body.append(("valu", ("+", tmp_addr, forest_values_p_vectorized, tmp_idx)))
-                    for vi in range(VLEN):
-                        body.append(("load", ("load_offset", tmp_node_val, tmp_addr, vi)))
-
+                body.append(("valu", ("+", tmp_addr, forest_values_p_vectorized, tmp_idx)))
+                for vi in range(VLEN):
+                    body.append(("load", ("load_offset", tmp_node_val, tmp_addr, vi)))
                 body.append(self.form_debug_compare_vector(tmp_node_val, round, debug_range, "node_val"))
 
                 # val = myhash(val ^ node_val)
