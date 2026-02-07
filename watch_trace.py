@@ -72,10 +72,10 @@ class MyHandler(http.server.BaseHTTPRequestHandler):
 
 # Start the server
 def run(server_class=http.server.HTTPServer, handler_class=MyHandler):
-    server_address = ("", 8000)
+    server_address = ("", 8002)
     httpd = server_class(server_address, handler_class)
     print("Starting httpd...")
-    webbrowser.open("http://localhost:8000")
+    webbrowser.open("http://localhost:8002")
     httpd.serve_forever()
 
 
