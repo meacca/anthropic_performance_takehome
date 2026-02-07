@@ -191,6 +191,8 @@ class KernelBuilder:
         tmp_node_val = self.alloc_scratch("tmp_node_val", length=VLEN)
         tmp_addr = self.alloc_scratch("tmp_addr", length=VLEN)
 
+        tmp_addr_scalar = self.alloc_scratch("tmp_addr_scalar")
+
         num_chunks = batch_size // VLEN
 
         for round in range(rounds):
@@ -201,18 +203,24 @@ class KernelBuilder:
 
                 # idx = mem[inp_indices_p + i]
                 body.append(
-                    ("alu", ("+", tmp_addr, self.scratch["inp_indices_p"], i_offset))
+                    (
+                        "alu",
+                        ("+", tmp_addr_scalar, self.scratch["inp_indices_p"], i_offset),
+                    )
                 )
-                body.append(("load", ("vload", tmp_idx, tmp_addr)))
+                body.append(("load", ("vload", tmp_idx, tmp_addr_scalar)))
                 body.append(
                     self.form_debug_compare_vector(tmp_idx, round, debug_range, "idx")
                 )
 
                 # val = mem[inp_values_p + i]
                 body.append(
-                    ("alu", ("+", tmp_addr, self.scratch["inp_values_p"], i_offset))
+                    (
+                        "alu",
+                        ("+", tmp_addr_scalar, self.scratch["inp_values_p"], i_offset),
+                    )
                 )
-                body.append(("load", ("vload", tmp_val, tmp_addr)))
+                body.append(("load", ("vload", tmp_val, tmp_addr_scalar)))
                 body.append(
                     self.form_debug_compare_vector(tmp_val, round, debug_range, "val")
                 )
@@ -274,14 +282,20 @@ class KernelBuilder:
 
                 # mem[inp_indices_p + i] = idx
                 body.append(
-                    ("alu", ("+", tmp_addr, self.scratch["inp_indices_p"], i_offset))
+                    (
+                        "alu",
+                        ("+", tmp_addr_scalar, self.scratch["inp_indices_p"], i_offset),
+                    )
                 )
-                body.append(("store", ("vstore", tmp_addr, tmp_idx)))
+                body.append(("store", ("vstore", tmp_addr_scalar, tmp_idx)))
                 # mem[inp_values_p + i] = val
                 body.append(
-                    ("alu", ("+", tmp_addr, self.scratch["inp_values_p"], i_offset))
+                    (
+                        "alu",
+                        ("+", tmp_addr_scalar, self.scratch["inp_values_p"], i_offset),
+                    )
                 )
-                body.append(("store", ("vstore", tmp_addr, tmp_val)))
+                body.append(("store", ("vstore", tmp_addr_scalar, tmp_val)))
 
         body_instrs = self.build(body)
         self.instrs.extend(body_instrs)
